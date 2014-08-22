@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [2009-2014] EMBL-European Bioinformatics Institute
+Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,22 +16,24 @@ limitations under the License.
 
 =cut
 
-# $Id: contigviewbottom.pm,v 1.7 2013-11-27 14:23:52 ek3 Exp $
-
-package EnsEMBL::Web::ImageConfig::contigviewbottom;
+package EnsEMBL::Web::Text::Feature::BED;
 
 use strict;
+use warnings;
 
-sub modify {
+sub _raw_score    { 
   my $self = shift;
-  
-  $self->load_configured_bam;
-  $self->load_configured_bed;
-  $self->load_configured_bedgraph;
-  $self->load_configured_mw;
 
-  my $ml = $self->get_node('fg_methylation_legend');
-  $ml->remove if $ml;
-} 
+  my $score = 0;
+## EG - ENSEMBL-3226 infinity
+  if ( exists($self->{'__raw__'}[4]) && $self->{'__raw__'}[4] =~ /^-*(\d+\.?\d*|inf)$/i) {
+    $score = uc($self->{'__raw__'}[4]);
+  }
+  elsif ($self->{'__raw__'}[3] =~ /^-*(\d+\.?\d*|inf)$/i) { ## Possible bedGraph format
+    $score = uc($self->{'__raw__'}[3]);
+  } 
+##  
+  return $score;
+}
 
 1;

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [2009-2014] EMBL-European Bioinformatics Institute
+Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,22 +16,21 @@ limitations under the License.
 
 =cut
 
-# $Id: contigviewbottom.pm,v 1.7 2013-11-27 14:23:52 ek3 Exp $
-
-package EnsEMBL::Web::ImageConfig::contigviewbottom;
+package EnsEMBL::Web::Configuration::GeneTree;
 
 use strict;
 
-sub modify {
+use base qw(EnsEMBL::Web::Configuration);
+  
+sub modify_tree {
   my $self = shift;
   
-  $self->load_configured_bam;
-  $self->load_configured_bed;
-  $self->load_configured_bedgraph;
-  $self->load_configured_mw;
-
-  my $ml = $self->get_node('fg_methylation_legend');
-  $ml->remove if $ml;
-} 
+  $self->create_subnode(
+    'Compara_Tree/Tree_Alignment', 'Gene Tree: Alignment',
+    [qw(alignment EnsEMBL::Web::Component::GeneTree::TreeAlignment)],
+    { 'no_menu_entry' => 1 }
+  );
+  
+}
 
 1;

@@ -86,8 +86,9 @@ sub draw_gradient {
     default => sub { return $_[0] },
     log2 => sub {
       my $score = shift;
+      $score = 0 if $score < 0;
       return 1 if $score == 0;
-      return 0 if $score == 1;
+      return 0 if $score == 1;   
       return ( log(1 / $score) / log(2) ) / 10;
     }
   );
@@ -204,7 +205,7 @@ sub draw_gradient {
 
   if ($show_key) {
     my $x_offset    = -10;
-    my $y_offset    = 18;
+    my $y_offset    = 22;
     my $width       = 95;
     my $blocks      = $colour_grades; 
     my $block_size  = int( $width / $blocks );
@@ -278,10 +279,15 @@ sub draw_wiggle_plot {
   my $textheight    = [ $self->get_text_width(0, $label, '', %font) ]->[3];  
   my $pix_per_score = $max_score == $min_score ? $self->label->height : $row_height / max($max_score - $min_score, 1);
   my $top_offset    = 0;
-  my $initial_offset= $self->_offset;
+  my $initial_offset= 0;
   my $bottom_offset = $max_score == $min_score ? 0 : (($max_score - ($min_score < 0 ? $min_score : 0)) || 1) * $pix_per_score;
   my $zero_offset   = $max_score * $pix_per_score;
-  
+
+## EG - ENSEMBL-3226 support infinity   
+  my $has_pos_infinity = $parameters->{'has_pos_infinity'};
+  my $has_neg_infinity = $parameters->{'has_neg_infinity'};
+##
+ 
   # Draw the labels
   ## Only done if we have multiple data sets
   if ($labels) {
@@ -381,8 +387,8 @@ sub draw_wiggle_plot {
   })); 
 
   if (!$labels) { # only change offset if not already done for gutter label
-    $top_offset += $textheight;
-    $self->_offset($textheight);
+    $top_offset += $textheight + 2;
+    $self->_offset($textheight + 2);
   }
 ##
 
@@ -458,14 +464,94 @@ sub draw_wiggle_plot {
       if ($parameters->{'graph_type'} eq 'line') {
         $self->draw_wiggle_points_as_line($feature_set, $slice, $parameters, $initial_offset + $top_offset, $pix_per_score, $colour, $zero_offset);
       } else {
-        $self->draw_wiggle_points($feature_set, $slice, $parameters, $top_offset, $pix_per_score, $colour, $zero_offset);
+        $self->draw_wiggle_points($feature_set, $slice, $parameters, $initial_offset + $top_offset, $pix_per_score, $colour, $zero_offset);
       }
     }
   } else {
-    $self->draw_wiggle_points($features, $slice, $parameters, $top_offset, $pix_per_score, $colour, $zero_offset);  
+    $self->draw_wiggle_points($features, $slice, $parameters, $initial_offset + $top_offset, $pix_per_score, $colour, $zero_offset);  
   }
     
   return 1;
+}
+
+sub draw_wiggle_points {
+  my ($self, $features, $slice, $parameters, $top_offset, $pix_per_score, $colour, $zero_offset) = @_;
+  my $hrefs     = $parameters->{'hrefs'};
+  my $points    = $parameters->{'graph_type'} eq 'points';
+  my $max_score = max($parameters->{'max_score'}, 0);
+  my $zero      = $top_offset + $zero_offset;
+  
+   my $count = 1;
+  foreach my $f (@$features) {
+    my ($start, $end, $score, $min_score, $height, $width, $x);
+    my $href        = ref $f ne 'HASH' && $f->can('id') ? $hrefs->{$f->id} : '';
+    my $this_colour = $colour;
+    
+    if ($parameters->{'use_feature_colours'} && $f->can('external_data')) {
+      my $data        = $f->external_data;
+         $this_colour = $data->{'item_colour'}[0] if $data && $data->{'item_colour'} && ref($data->{'item_colour'}) eq 'ARRAY';
+    }
+    
+    # Data is from a Funcgen result set collection, windowsize > 0
+    if (ref $f eq 'HASH') {
+      $start = $f->{'start'} < 1 ? 1 : $f->{'start'};
+      $end   = $f->{'end'}   > $slice->length  ? $slice->length : $f->{'end'};
+      $score = $f->{'score'};
+    } else {
+      $start = $f->start < 1 ? 1 : $f->start; 
+      $end   = $f->end   > $slice->length ? $slice->length : $f->end;  
+
+      if ($f->isa('Bio::EnsEMBL::Variation::ReadCoverageCollection')) {
+        $score     = $f->read_coverage_max;
+        $min_score = $f->read_coverage_min;
+      } else {
+        $score = $f->can('score') ? $f->score || 0 : $f->can('scores') ? $f->scores->[0] : 0;
+      }
+    }
+    
+    # alter colour if the intron supporting feature has a name of non_canonical
+    if (ref $f ne 'HASH' && $f->can('display_id') && $f->can('analysis') && $f->analysis->logic_name =~ /_intron/) {
+      my $can_type    = [ split /:/, $f->display_id ]->[-1];
+         $this_colour = $parameters->{'non_can_score_colour'} || $colour if $can_type && length $can_type > 3 && substr('non canonical', 0, length $can_type) eq $can_type;
+    }
+    
+    $x     = $start - 1;
+    $width = $end - $start + 1;
+   
+    foreach ([ $score, $this_colour ], $min_score ? [ $min_score, 'steelblue' ] : ()) {
+
+## EG - ENSEMBL-3226 support infinity         
+      if ($_->[0] =~ /INF/) {
+        $height = $max_score * $pix_per_score                         if $_->[0] eq 'INF';
+        $height = min($parameters->{'min_score'}, 0) * $pix_per_score if $_->[0] eq '-INF';
+      } else{ 
+        $height = ($max_score ? min($_->[0], $max_score) : $_->[0]) * $pix_per_score;
+      }
+##
+
+      $self->push($self->Rect({
+        y         => $zero - max($height, 0),
+        height    => $points ? 0 : abs $height,
+        x         => $x,
+        width     => $width,
+        absolutey => 1,
+## EG - ENSEMBL-3226 support infinity        
+        colour    => $_->[0] =~ /INF/ ? 'black' : $_->[1],      
+        title     => $parameters->{'no_titles'} ? undef : $self->score_title($_->[0]),
+## EG         
+        href      => $href,
+      }));
+    }
+  }
+
+  return 1;
+} 
+
+sub score_title {
+  my ($self, $score) = @_;
+  return 'Infinite value'           if $score eq 'INF';
+  return 'Negavtive infinite value' if $score eq '-INF';
+  return sprintf('%.2f', $score);
 }
 
 1;
