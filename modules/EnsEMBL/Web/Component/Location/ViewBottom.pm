@@ -24,7 +24,7 @@ sub content {
   my $self        = shift;
   my $hub         = $self->hub;
   my $object      = $self->object;
-  my $threshold   = 1000100 * ($hub->species_defs->ENSEMBL_GENOME_SIZE || 1);
+  my $threshold   = 1000100 * ($hub->species_defs->ENSEMBL_MAX_ZOOM_OUT_LEVEL || $hub->species_defs->ENSEMBL_GENOME_SIZE || 1);
   my $image_width = $self->image_width;
   
   return $self->_warning('Region too large', '<p>The region selected is too large to display in this view - use the navigation above to zoom in...</p>') if $object->length > $threshold;
@@ -46,8 +46,8 @@ sub content {
   my $extension = $hub->species_defs->get_config('MULTI', 'REGION_EXTENSION_VIEW');
   
   if ($t and $extension and $extension < 1) {
-    my $transcript = $hub->get_adaptor('get_TranscriptAdaptor')->fetch_by_stable_id($t);
-    if ($transcript->start == $slice->start and $transcript->end == $slice->end) {
+    my $transcript = $hub->get_adaptor('get_TranscriptAdaptor', $hub->param('db'))->fetch_by_stable_id($t);
+    if ($transcript and $transcript->start == $slice->start and $transcript->end == $slice->end) {
       my $flank = int (($slice->end - $slice->start) * $extension);
       $slice = $slice->expand($flank, $flank);     
     }

@@ -184,8 +184,8 @@ sub content {
   $html .= '</div>'; #box-left
   $html .= '<div class="box-right">';
   
-  if ($hub->species_defs->multidb->{'DATABASE_PRODUCTION'}{'NAME'}) {
-    $html .= '<div class="round-box info-box unbordered">' . $self->_whatsnew_text . '</div>';
+  if ($hub->species_defs->multidb->{'DATABASE_PRODUCTION'}{'NAME'} and my $whatsnew_text = $self->_whatsnew_text) {
+    $html .= '<div class="round-box info-box unbordered">' . $whatsnew_text . '</div>';
   } elsif (my $ack_text = $self->_other_text('acknowledgement', $species)) {
     $html .= '<div class="plain-box round-box unbordered">' . $ack_text . '</div>';
   }
@@ -490,7 +490,7 @@ sub _compara_text {
   $html .= qq(<p><a href="http://ensemblgenomes.org/info/data/whole_genome_alignment" class="nodeco"><img src="${img_url}24/info.png" alt="" class="homepage-link" />More about comparative analysis</a></p>);
 
   if ($species_defs->ENSEMBL_FTP_URL) {
-    my $ftp_url = sprintf '%s/release-%s/emf/ensembl-compara/', $species_defs->ENSEMBL_FTP_URL, $ensembl_version;
+    my $ftp_url = sprintf '%s/release-%s/emf/ensembl_compara/', $species_defs->ENSEMBL_FTP_URL, $ensembl_version;
     $html .= qq(<p><a href="$ftp_url" class="nodeco"><img src="${img_url}24/download.png" alt="" class="homepage-link" />Download alignments</a> (EMF)</p>) 
       unless $self->is_bacteria;
   }
