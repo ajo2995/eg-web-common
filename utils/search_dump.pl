@@ -101,7 +101,8 @@ print "*** No databases found ***\n" unless %{$dbHash};
 
 my @datasets = split ',', $species;
 # restrict species to only those defined in the current eg site
-@datasets = @datasets ? @{ utils::Tool::check_species(\@datasets) } : @{ utils::Tool::all_species() };
+# @datasets = @datasets ? @{ utils::Tool::check_species(\@datasets) } : @{ utils::Tool::all_species() };
+@datasets = sort keys %$dbHash;
 
 print "\nDatasets to process: \n  " . join("\n  ", @datasets) . "\n";
 
@@ -447,6 +448,28 @@ sub dumpGene {
       $domain_count{$_->[0]} = $_->[1];
     }
 
+    my %interpro;
+    $T = $dbh->selectall_arrayref(
+      'SELECT DISTINCT g.gene_id, ipr.interpro_ac
+       FROM gene g, transcript t, translation tl, protein_feature pf, interpro ipr
+       WHERE g.gene_id = t.gene_id AND t.transcript_id = tl.transcript_id AND tl.translation_id = pf.translation_id AND pf.hit_name = ipr.id'
+    );
+
+    foreach (@$T) {
+      $interpro{$_->[0]}{$_->[1]} = 1;
+    }
+
+    my %protein_features;
+    $T = $dbh->selectall_arrayref(
+      'SELECT DISTINCT g.gene_id, ana.db, pf.hit_name
+       FROM gene g, transcript t, translation tl, protein_feature pf, analysis ana
+       WHERE g.gene_id = t.gene_id AND t.transcript_id = tl.transcript_id AND tl.translation_id = pf.translation_id AND pf.analysis_id = ana.analysis_id'
+    );
+
+    foreach (@$T) {
+      $protein_features{$_->[0]}{$_->[1]}{$_->[2]} = 1;
+    }
+
     unless($nodomaindescription) {
       my %domain_descriptions;
       $T = $dbh->selectall_arrayref(
@@ -487,6 +510,7 @@ sub dumpGene {
       my ($species_id)      = @{$dbh->selectrow_arrayref("SELECT DISTINCT(species_id) FROM meta WHERE meta_value = ? LIMIT 0,1", undef, $species)};
       my ($taxon_id)        = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'species.taxonomy_id' AND species_id = ?", undef, $species_id)};
       my ($production_name) = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'species.production_name' AND species_id = ?", undef, $species_id)};
+      my ($assembly)        = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'assembly.default' AND species_id = ?", undef, $species_id)};
       
       my $ortholog_lookup     = get_ortholog_lookup($conf, $production_name, $genomic_unit);
       my $ortholog_lookup_pan = get_ortholog_lookup($conf, $production_name, 'pan_homology');
@@ -570,7 +594,7 @@ sub dumpGene {
              g.stable_id AS gsid, t.stable_id AS tsid, tr.stable_id AS trsid,
              g.description, ed.db_display_name, x.dbprimary_acc,x.display_label AS xdlgene, 
              ad.display_label, ad.description, ad.web_data, g.source, g.status, g.biotype,
-             sr.name AS seq_region_name, g.seq_region_start, g.seq_region_end
+             sr.name AS seq_region_name, g.seq_region_start, g.seq_region_end, g.seq_region_strand
            FROM (gene AS g,
              analysis_description AS ad,
              transcript AS t) LEFT JOIN
@@ -599,7 +623,7 @@ sub dumpGene {
             $analysis_description_display_label, $analysis_description, $web_data,
             $gene_source,                        $gene_status,
             $gene_biotype,                       $seq_region_name,
-            $seq_region_start,                   $seq_region_end
+            $seq_region_start,                   $seq_region_end, $seq_region_strand
           ) = @$row;
           
           if ($web_data) {
@@ -640,7 +664,10 @@ sub dumpGene {
               'domains'                => $domains{$gene_id},
               'domain_count'           => $domain_count{$gene_id},
               'system_name'            => $production_name,
-              'database'                => $DB,
+              'database'               => $DB,
+              'interpro'               => $interpro{$gene_id},
+              'protein_features'       => $protein_features{$gene_id},
+              'map_location'           => {map => $assembly, region => $seq_region_name, start => $seq_region_start+0, end => $seq_region_end+0, strand => $seq_region_strand+0 }
             );
             
             $old{'source'} =~ s/base/Base/;
@@ -711,22 +738,25 @@ sub geneLineJSON {
   }
 
   my %data;
+  $data{database}    = $xml_data->{database};
   $data{gene_id}     = $xml_data->{gene_stable_id};
   $data{biotype}     = $xml_data->{biotype};
-  $data{name}        = $xml_data->{display_name};
+  $data{name}        = $xml_data->{gene_name};
   $data{description} = $xml_data->{description};
-  $data{system_name} = $xml_data->{'system_name'};
+  $data{system_name} = $xml_data->{system_name};
   $data{species}     = $species;
-  if ($xml_data->{location} =~ m/^(.+):(\d+)-(\d+)$/) {
-      $data{location}{seq_region} = $1;
-      $data{location}{start}      = $2 + 0;
-      $data{location}{end}        = $3 + 0;
-  }
+  $data{taxon_id}    = $xml_data->{taxon_id}+0;
+  $data{location}    = $xml_data->{map_location};
   $data{xrefs}       = $xml_data->{external_identifiers};
-  $data{taxon_id}    = $xml_data->{'taxon_id'}+0;
-  $data{genetrees}   = $xml_data->{'genetrees'};
+  $data{genetrees}   = $xml_data->{genetrees};
 
-  @{$data{domains}}  = keys %{$xml_data->{'domains'}};
+  # @{$data{domains}}  = keys %{$xml_data->{'domains'}};
+  if ($xml_data->{protein_features}) {
+    for my $db (keys %{$xml_data->{protein_features}}) {
+      @{$data{protein_features}{$db}} = keys %{$xml_data->{protein_features}{$db}};
+    }
+  }
+  @{$data{protein_features}{interpro}} = keys %{$xml_data->{interpro}} if ($xml_data->{interpro});
 
   while (my ($db,$hsh) = each %{$data{xrefs}}) {
       if ($SKIP_XREF{$db}) {
@@ -736,6 +766,8 @@ sub geneLineJSON {
       my @k = keys %$hsh;
       $data{xrefs}{$db} = \@k;
   }
+  
+  $data{snps} = $xml_data->{snps} if $xml_data->{snps};
 
   my $json = encode_json \%data;
 
