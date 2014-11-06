@@ -508,9 +508,17 @@ sub dumpGene {
     foreach my $species (keys %$species_to_seq_region) {
       my $counter = make_counter(0);
       my ($species_id)      = @{$dbh->selectrow_arrayref("SELECT DISTINCT(species_id) FROM meta WHERE meta_value = ? LIMIT 0,1", undef, $species)};
-      my ($taxon_id)        = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'species.taxonomy_id' AND species_id = ?", undef, $species_id)};
-      my ($production_name) = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'species.production_name' AND species_id = ?", undef, $species_id)};
-      my ($assembly)        = @{$dbh->selectrow_arrayref("SELECT meta_value FROM meta WHERE meta_key = 'assembly.default' AND species_id = ?", undef, $species_id)};
+
+      $T = $dbh->selectall_arrayref("SELECT meta_key, meta_value from meta where species_id = ?", undef, $species_id);
+      my %meta;
+      foreach (@$T) {
+        $meta{$_->[0]} = $_->[1];
+      }
+
+      my $taxon_id = $meta{"species.taxonomy_id"};
+      my $production_name = $meta{"species.production_name"};
+      my $map_name = exists $meta{"assembly.accession"} ? $meta{"assembly.accession"}
+        : exists $meta{"assembly.name"} ? $meta{"assembly.name"} : $production_name;
       
       my $ortholog_lookup     = get_ortholog_lookup($conf, $production_name, $genomic_unit);
       my $ortholog_lookup_pan = get_ortholog_lookup($conf, $production_name, 'pan_homology');
@@ -667,7 +675,7 @@ sub dumpGene {
               'database'               => $DB,
               'interpro'               => $interpro{$gene_id},
               'protein_features'       => $protein_features{$gene_id},
-              'map_location'           => {map => $assembly, region => $seq_region_name, start => $seq_region_start+0, end => $seq_region_end+0, strand => $seq_region_strand+0 }
+              'map_location'           => {map => $map_name, region => $seq_region_name, start => $seq_region_start+0, end => $seq_region_end+0, strand => $seq_region_strand+0 }
             );
             
             $old{'source'} =~ s/base/Base/;
@@ -748,7 +756,7 @@ sub geneLineJSON {
   $data{taxon_id}    = $xml_data->{taxon_id}+0;
   $data{location}    = $xml_data->{map_location};
   $data{xrefs}       = $xml_data->{external_identifiers};
-  $data{genetrees}   = $xml_data->{genetrees};
+  $data{genetrees}   = $xml_data->{genetrees} if ($xml_data->{genetrees});
 
   # @{$data{domains}}  = keys %{$xml_data->{'domains'}};
   if ($xml_data->{protein_features}) {
@@ -767,8 +775,6 @@ sub geneLineJSON {
       $data{xrefs}{$db} = \@k;
   }
   
-  $data{snps} = $xml_data->{snps} if $xml_data->{snps};
-
   my $json = encode_json \%data;
 
   $counter->();
